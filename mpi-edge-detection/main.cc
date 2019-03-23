@@ -3,6 +3,8 @@
 #include "image.h"
 #include "stencil.h"
 #include <mpi.h>
+#include <vector>
+#include <algorithm>
 
 
 #define P float
@@ -55,20 +57,72 @@ int main(int argc, char** argv) {
   //tracking(img_out);
   if (world_rank == 0) t3 = omp_get_wtime();
   MPI_Barrier(MPI_COMM_WORLD);
-  MPI_Gather();
-  if (world_rank == 0) printf("  Done in %f\n", t3-t2);
-  MPI_Finalize();
+  
+  float* pixel1 = img_out.pixel;
+  float* pixel2 = img_out2.pixel;
+  float su = 0; 
+  for (int i = 0; i < height-1; i++)
+      for (int j = 0; j < width-1; j++)
+       su += pixel2[i*width+j];
+  //printf("%f\n", su);
+  
+  double count = double(height-2)/double(world_size);
+  const int first_row = 1 + int(count*world_rank);
+  const int last_row  = 1 + int(count*(world_rank+1));
+  const int to_send = (last_row-first_row)*width;
+  P* recv_buff = NULL;
+  int* disp = NULL;
+  int* rcount = NULL;
+  if (world_rank == 0) {
+    recv_buff = (P*)_mm_malloc(sizeof(P)*width*height, 64);
+    disp = (int*)malloc(world_size*sizeof(int));
+    rcount = (int*)malloc(world_size*sizeof(int)); 
+    int d1;
+    int d2;
+    int d3;
+    for (int r = 0; r < world_size; r++) {
+      d1 = 1 + int(count*r);
+      d2 = 1 + int(count*(r+1));
+      d3 = (d2-d1)*width;
+      rcount[r]= d3;
+    }
+    disp[0] = 0;
+    for (int r = 1; r < world_size; r++) {
+      disp[r] = disp[r-1] + rcount[r-1];
+    }
+  }
+  printf("starting from %d to %d for %d %d\n", first_row*width, last_row*width-1, int(count)*width, to_send);
+  MPI_Gatherv(&pixel2[first_row*width], to_send, MPI_FLOAT, &recv_buff[0], rcount, disp, MPI_FLOAT, 0, MPI_COMM_WORLD);
+  //MPI_Barrier(MPI_COMM_WORLD);
+  if (world_rank == 0) {
+    std::vector<int> check;
+    for (int i = 1; i < height-1; i++)
+      for (int j = 1; j < width-1; j++) {
+        pixel2[i*width+j] = recv_buff[i*width+j];
+      }
+    for (int i=0; i<height-1; i++) {
+        if (recv_buff[i*width+1] == 0.0) {
+            bool a_bool = true;
+            for (int j=0; j<width-1; j++) {
+                if (recv_buff[i*width+j] != 0) {
+                    a_bool = false;
+                    break;
+                }
+            }
+            if (a_bool) printf("%d\n", i);
+        }
+    }
+    printf("  Done in %f\n", t3-t2);
+  }
 
   if (world_rank == 0) {
     printf("Checking and saving results...\n");
-    float* pixel1 = img_out.pixel;
-    float* pixel2 = img_out2.pixel;
     bool validate = true;
     for (int i = 0; i < height-1; i++)
       for (int j = 0; j < width-1; j++) {
         if (pixel1[i*width+j] != pixel2[i*width+j]) {
           validate = false;
-          printf("%f %f %d %d\n", pixel1[i*width+j], pixel2[i*width+j], i, j);
+          //printf("%f %f %d %d\n", pixel1[i*width+j], pixel2[i*width+j], i, j);
           //pixel2[i*width+j] = 255;
         }
       }
@@ -78,4 +132,5 @@ int main(int argc, char** argv) {
     img_out.WriteToFile("output.png");
     img_out2.WriteToFile("output2.png");
   }
+  MPI_Finalize();
 }

@@ -134,7 +134,7 @@ void sobel_filter_mpi(ImageClass<float> &img_in, ImageClass<float> &img_out,
   const double rowsPerProcess = double(height-2)/double(comm_size);
   const int myFirstRow = 1 + int(rowsPerProcess*rank);
   const int myLastRow  = 1 + int(rowsPerProcess*(rank+1));
-  
+  printf("Rank %d takes care row %d to %d, pixel %d to pixel %d\n", rank, myFirstRow, myLastRow-1, myFirstRow*width, (myLastRow)*width-1); 
   int** K = simple_kernel();
   K[0] = new int[3] {-1, 0, 1};
   K[1] = new int[3] {-2, 0, 2};
