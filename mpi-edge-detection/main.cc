@@ -60,11 +60,6 @@ int main(int argc, char** argv) {
   
   float* pixel1 = img_out.pixel;
   float* pixel2 = img_out2.pixel;
-  float su = 0; 
-  for (int i = 0; i < height-1; i++)
-      for (int j = 0; j < width-1; j++)
-       su += pixel2[i*width+j];
-  //printf("%f\n", su);
   
   double count = double(height-2)/double(world_size);
   const int first_row = 1 + int(count*world_rank);
@@ -91,9 +86,7 @@ int main(int argc, char** argv) {
       disp[r] = disp[r-1] + rcount[r-1];
     }
   }
-  printf("starting from %d to %d for %d %d\n", first_row*width, last_row*width-1, int(count)*width, to_send);
-  MPI_Gatherv(&pixel2[first_row*width], to_send, MPI_FLOAT, &recv_buff[0], rcount, disp, MPI_FLOAT, 0, MPI_COMM_WORLD);
-  //MPI_Barrier(MPI_COMM_WORLD);
+  MPI_Gatherv(&pixel2[first_row*width], to_send, MPI_FLOAT, &recv_buff[width], rcount, disp, MPI_FLOAT, 0, MPI_COMM_WORLD);
   if (world_rank == 0) {
     std::vector<int> check;
     for (int i = 1; i < height-1; i++)
@@ -109,10 +102,19 @@ int main(int argc, char** argv) {
                     break;
                 }
             }
-            if (a_bool) printf("%d\n", i);
+            if (a_bool) printf("%d %d\n", i, i*width);
         }
     }
     printf("  Done in %f\n", t3-t2);
+    printf("received %d %d %d %d %d\n", rcount[0],rcount[1],rcount[2],rcount[3],rcount[4]); 
+    bool bool2 = true;
+    for (int j=0; j<width-1; j++) {
+      if (recv_buff[638*width+j] != 0) {
+        bool2 = false;
+        break;
+      }
+    }
+    if (bool2) printf("line 638 all zero from rank %d\n", world_rank);
   }
 
   if (world_rank == 0) {
