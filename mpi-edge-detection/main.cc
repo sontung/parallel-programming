@@ -60,9 +60,9 @@ int main(int argc, char** argv) {
 
             double t0 = omp_get_wtime();
             sobel_filter(img_in, img_out, theta);
-            //non_max_suppress(img_out, theta);
-            //threshold(img_out);
-            //tracking(img_out);
+            non_max_suppress(img_out, theta);
+            threshold(img_out);
+            tracking(img_out);
             double t1 = omp_get_wtime();
             printf("  Done in %f\n", t1-t0);
             non_mpi_time += t1-t0;
@@ -84,7 +84,7 @@ int main(int argc, char** argv) {
         const int to_send = (last_row-first_row)*width;
         if (world_rank == 0) t2 = omp_get_wtime();
         sobel_filter_mpi(img_in, img_out2, theta2, first_row, last_row);
-        //non_max_suppress_mpi(img_out2, theta, first_row, last_row);
+        non_max_suppress_mpi(img_out2, theta, first_row, last_row);
 
         float* max_values = (float*)malloc(sizeof(float)*world_size);
         float max_val = 0;
@@ -96,7 +96,7 @@ int main(int argc, char** argv) {
 
         for (int r=0; r<world_size; r++) if (max_values[r] > max_val) max_val = max_values[r];
 
-        //threshold_mpi(img_out2, first_row, last_row, max_val);
+        threshold_mpi(img_out2, first_row, last_row, max_val);
 
 
         P* recv_buff = NULL;
