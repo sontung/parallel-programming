@@ -21,7 +21,15 @@ void threshold(ImageClass<float> &img);
 
 void tracking(ImageClass<float> &img);
 
-void sobel_filter_mpi(ImageClass<float> &img_in, ImageClass<float> &img_out,                                    ImageClass<float> &_theta, int rank, int comm_size);
+bool check_blob(float* &pixels_arr, int x, int y, int width);
+
+void sobel_filter_mpi(ImageClass<float> &img_in, ImageClass<float> &img_out, ImageClass<float> &_theta, const int myFirstRow, const int myLastRow);
+
+void non_max_suppress_mpi(ImageClass<float> &img_grad, ImageClass<float> &img_theta, const int myFirstRow, const int myLastRow);
+
+void threshold_mpi(ImageClass<float> &img, const int myFirstRow, const int myLastRow, float max_val);
+
+void tracking_mpi(ImageClass<float> &img, const int myFirstRow, const int myLastRow, int rank, bool first_pass);
 
 void Convolve_mpi(ImageClass<float> & img_in, ImageClass<float> & img_out,
                   int** kernel, int first_row, int last_row);

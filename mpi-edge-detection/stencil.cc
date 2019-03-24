@@ -128,13 +128,9 @@ void Convolve_mpi(ImageClass<float> & img_in, ImageClass<float> & img_out,
 
 
 void sobel_filter_mpi(ImageClass<float> &img_in, ImageClass<float> &img_out, 
-                      ImageClass<float> &_theta, int rank, int comm_size) {
+                      ImageClass<float> &_theta, const int myFirstRow, const int myLastRow) {
   const int width = img_in.width;
   const int height = img_in.height;
-  const double rowsPerProcess = double(height-2)/double(comm_size);
-  const int myFirstRow = 1 + int(rowsPerProcess*rank);
-  const int myLastRow  = 1 + int(rowsPerProcess*(rank+1));
-  printf("Rank %d takes care row %d to %d, pixel %d to pixel %d\n", rank, myFirstRow, myLastRow-1, myFirstRow*width, (myLastRow)*width-1); 
   int** K = simple_kernel();
   K[0] = new int[3] {-1, 0, 1};
   K[1] = new int[3] {-2, 0, 2};
@@ -200,7 +196,42 @@ void non_max_suppress(ImageClass<float> &img_grad, ImageClass<float> &img_theta)
     for (int j = 0; j < width-1; j++) {
       gradient[i*width+j] = res_vals[i*width+j];
     } 
+}
 
+void non_max_suppress_mpi(ImageClass<float> &img_grad, ImageClass<float> &img_theta, const int myFirstRow, const int myLastRow) {
+  const int width  = img_grad.width;
+  const int height = img_grad.height;
+  float* gradient = img_grad.pixel;
+  float* _theta = img_theta.pixel;
+  ImageClass<float> res(width, height);
+  float* res_vals = res.pixel;
+
+  for (int i = myFirstRow; i < myLastRow; i++)
+    for (int j = 1; j < width-1; j++) {
+      int q = 255;
+      int r = 255;
+      if ((0 <= _theta[i*width+j] < 22.5) || (157.5 <= _theta[i*width+j] <= 180)) {
+        q = gradient[i*width+j+1];
+        r = gradient[i*width+j-1];
+      } else if (22.5 <= _theta[i*width+j] < 67.5) {
+        q = gradient[(i+1)*width+j-1];
+        r = gradient[(i-1)*width+j+1];
+      } else if (67.5 <= _theta[i*width+j] < 112.5) {
+        q = gradient[(i+1)*width+j];
+        r = gradient[(i-1)*width+j];
+      } else if (112.5 <= _theta[i*width+j] < 157.5) {
+        q = gradient[(i-1)*width+j-1];
+        r = gradient[(i+1)*width+j+1];
+      } else;
+
+      if ((gradient[i*width+j] >= q) && (gradient[i*width+j]) >= r) res_vals[i*width+j] = gradient[i*width+j];
+      else res_vals[i*width+j] = 0;
+    }
+
+  for (int i = myFirstRow; i < myLastRow; i++)
+    for (int j = 0; j < width-1; j++) {
+      gradient[i*width+j] = res_vals[i*width+j];
+    }
 }
 
 void threshold(ImageClass<float> &img) {
@@ -223,6 +254,25 @@ void threshold(ImageClass<float> &img) {
     }
 }
 
+void threshold_mpi(ImageClass<float> &img, const int myFirstRow, const int myLastRow, float max_val) {
+  const int width  = img.width;
+  const int height = img.height;
+  float* pixels = img.pixel;
+  for (int i = myFirstRow; i < myLastRow; i++)
+    for (int j = 0; j < width-1; j++) {
+      if (pixels[i*width+j] > max_val) max_val = pixels[i*width+j];
+    } 
+  float high_threshold = max_val*0.15;
+  float low_threshold = high_threshold * 0.05;
+  for (int i = myFirstRow; i < myLastRow; i++)
+    for (int j = 0; j < width-1; j++) {
+      if (pixels[i*width+j] > high_threshold) pixels[i*width+j] = 255;
+      else if (low_threshold <= pixels[i*width+j] && pixels[i*width+j] <= high_threshold) {
+        pixels[i*width+j] = 75;
+      } else pixels[i*width+j] = 0;
+    }
+}
+
 void tracking(ImageClass<float> &img) {
   const int width  = img.width;
   const int height = img.height;
@@ -230,18 +280,65 @@ void tracking(ImageClass<float> &img) {
   for (int i = 1; i < height-1; i++)
     for (int j = 1; j < width-1; j++) {
       if (pixels[i*width+j] == 75) {
-        if (pixels[(i-1)*width+j-1] == 255 ||
-            pixels[(i-1)*width+j]   == 255 ||
-            pixels[(i-1)*width+j+1] == 255 ||
-            pixels[(i)*width+j-1]   == 255 ||
-            pixels[(i)*width+j+1]   == 255 ||
-            pixels[(i+1)*width+j-1] == 255 || 
-            pixels[(i+1)*width+j]   == 255 ||
-            pixels[(i+1)*width+j+1] == 255) {
+        if (check_blob(pixels, i, j, width)) {
           pixels[i*width+j] = 255;
         } else pixels[i*width+j] = 0;
-      };
+      }
     }
+}
+
+bool check_blob(float* &pixels_arr, int x, int y, int width) {
+    bool res;  
+    if (pixels_arr[(x-1)*width+y-1] == 255 ||
+        pixels_arr[(x-1)*width+y]   == 255 ||
+        pixels_arr[(x-1)*width+y+1] == 255 ||
+        pixels_arr[(x)*width+y-1]   == 255 ||
+        pixels_arr[(x)*width+y+1]   == 255 ||
+        pixels_arr[(x+1)*width+y-1] == 255 || 
+        pixels_arr[(x+1)*width+y]   == 255 ||
+        pixels_arr[(x+1)*width+y+1] == 255) {
+      res = true;
+    } else res = false;
+    return res;
+}
+
+void tracking_mpi(ImageClass<float> &img, const int myFirstRow, const int myLastRow, int rank, bool first_pass) {
+  const int width  = img.width;
+  const int height = img.height;
+  float* pixels = img.pixel;
+  bool bool2 = true;
+  for (int u=0; u<width; u++) {
+    if (pixels[(510)*width+u] != 0) {
+      bool2 = false;
+      break;
+    }
+  }
+  //if (bool2) printf("first row all zero from rank %d\n", rank);
+  //else printf("first row not all zero from rank %d\n", rank);
+  if (first_pass) {
+    for (int i = myFirstRow+1; i < myLastRow-1; i++) {
+      for (int j = 1; j < width-1; j++) {
+        if (pixels[i*width+j] == 75) {
+          if (check_blob(pixels, i, j, width)) {
+            pixels[i*width+j] = 255;
+          } else pixels[i*width+j] = 0;
+        }
+      }
+    }
+  } else {
+    for (int j = 1; j < width-1; j++) {
+      if (pixels[myFirstRow*width+j] == 75) {
+        if (check_blob(pixels, myFirstRow, j, width)) {
+          pixels[myFirstRow*width+j] = 255;
+        } else pixels[myFirstRow*width+j] = 0;
+      }
+      if (pixels[(myLastRow-1)*width+j] == 75) {
+        if (check_blob(pixels, myLastRow-1, j, width)) {
+          pixels[(myLastRow-1)*width+j] = 255;
+        } else pixels[(myLastRow-1)*width+j] = 0;
+      }
+    }
+  } 
 }
 
 template void Convolve(ImageClass<float> & img_in, ImageClass<float> & img_out, int** kernel);
