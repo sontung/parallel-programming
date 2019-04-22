@@ -29,8 +29,8 @@ __global__ void apply_stencil_gpu(float* in, float* out, float* g, int w, int h,
     int i = x / w;
     if (1 <= i && i < h && 1 <= j && j < w) {
         float val = in[i*w+j]*(1-time_step*(arithmetic_mean_gpu(g[i*w+j], g[(i+1)*w+j]) +
-	          		            arithmetic_mean_gpu(g[i*w+j], g[(i-1)*w+j]) +
-					    arithmetic_mean_gpu(g[i*w+j], g[i*w+j+1]) +										                                                                    arithmetic_mean_gpu(g[i*w+j], g[i*w+j-1])));
+	          		                        arithmetic_mean_gpu(g[i*w+j], g[i*w+j+1]) +
+	          		                        arithmetic_mean_gpu(g[i*w+j], g[i*w+j-1])));
         val += in[(i+1)*w+j]*time_step*arithmetic_mean_gpu(g[i*w+j], g[(i+1)*w+j]);
         val += in[(i-1)*w+j]*time_step*arithmetic_mean_gpu(g[i*w+j], g[(i-1)*w+j]);
         val += in[i*w+j+1]*time_step*arithmetic_mean_gpu(g[i*w+j], g[i*w+j+1]);
